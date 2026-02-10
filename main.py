@@ -258,6 +258,21 @@ class GameWidget(Widget):
         # Handle collisions
         if target_cell == WALL or target_cell == FIREWALL:
             return
+            
+        if target_cell == EXIT:
+            if self.keys_collected >= self.required_keys:
+                print("Level Complete!")
+                self.current_level_index += 1
+                if self.current_level_index < len(LEVELS):
+                    self.load_level(self.current_level_index)
+                else:
+                    print("Game Won!")
+                    self.won = True
+                return
+            else:
+                # Locked exit acts as a wall
+                return
+
         elif target_cell == KEY:
             self.keys_collected += 1
             self.grid.set_tile(new_x, new_y, EMPTY)
@@ -433,9 +448,19 @@ class GameWidget(Widget):
             if player_texture:
                 Color(1, 1, 1, 1)
                 # Handle flipping
-                tex_coords = (0, 0, 1, 0, 1, 1, 0, 1)
+                # Default UVs (0,0 is usually bottom-left in Kivy, but texture might be top-down?)
+                # If player is upside down (legs up), we need to flip V.
+                # Let's try V=1 at bottom?
+                # Standard: BL(0,0), BR(1,0), TR(1,1), TL(0,1)
+                # To flip vertically: BL(0,1), BR(1,1), TR(1,0), TL(0,0)
+                
                 if self.facing_left:
-                    tex_coords = (1, 0, 0, 0, 0, 1, 1, 1)
+                     # Flip H + Flip V
+                    tex_coords = (1, 1, 0, 1, 0, 0, 1, 0)
+                else:
+                    # Flip V only
+                    tex_coords = (0, 1, 1, 1, 1, 0, 0, 0)
+                    
                 Rectangle(texture=player_texture, pos=(px, py), size=(TILE_SIZE, TILE_SIZE), tex_coords=tex_coords)
             else:
                 Color(*COLOR_HACKER)
