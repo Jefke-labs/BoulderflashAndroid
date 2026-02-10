@@ -18,7 +18,7 @@ jobs:
         with:
           workdir: .
           buildozer_version: stable
-          command: buildozer android debug
+          command: pip install --ignore-installed "wheel~=0.43.0" && buildozer android debug
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
