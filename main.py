@@ -11,6 +11,7 @@ if current_dir not in sys.path:
     sys.path.insert(0, current_dir)
 
 # Kivy-compatible Pygame Shim
+# Kivy-compatible Pygame Shim
 class PygameShim:
     class Rect:
         def __init__(self, x=0, y=0, w=0, h=0):
@@ -28,21 +29,41 @@ class PygameShim:
         class SysFont:
             def __init__(self, *args, **kwargs): pass
             def render(self, *args, **kwargs): return None
+    class Surface:
+        def __init__(self, texture=None, size=(0,0)):
+            self.texture = texture
+            self.width, self.height = size if texture is None else texture.size
+        def convert_alpha(self): return self
+        def convert(self): return self
+        def get_width(self): return self.width
+        def get_height(self): return self.height
+        def subsurface(self, rect): return self # Todo if needed
+        
     class image:
         @staticmethod
         def load(path):
-            return PygameShim.Surface()
+            from kivy.core.image import Image as CoreImage
+            try:
+                # remove ./ if present as it might confuse Kivy loader sometimes?
+                # actually CoreImage handles paths fairly well.
+                img = CoreImage(path)
+                return PygameShim.Surface(img.texture)
+            except Exception as e:
+                print(f"Shim: Failed to load {path}: {e}")
+                return PygameShim.Surface()
+                
     class transform:
         @staticmethod
-        def scale(s, size): return s
+        def scale(s, size):
+            # We can't easily rescale a texture in Kivy without rendering it.
+            # But we can just pretend surface has new size, or return same surface.
+            # Grid uses scale for explosion frames.
+            # Let's return a new surface with same texture but updated 'size' attribute if we used it?
+            # actually grid just stores them. Rendering will determine size.
+            return s # Pass-through for now
         @staticmethod
-        def flip(s, x, y): return s
-    class Surface:
-        def convert_alpha(self): return self
-        def convert(self): return self
-        def get_width(self): return 0
-        def get_height(self): return 0
-        def subsurface(self, rect): return self
+        def flip(s, x, y): return s # Texture flipping handled at render time
+
 
 sys.modules['pygame'] = PygameShim
 import pygame
@@ -323,41 +344,70 @@ class GameWidget(Widget):
                     px = x * TILE_SIZE
                     py = (self.grid.height - y - 1) * TILE_SIZE  # Flip Y
                     
-                    color = COLOR_EMPTY
-                    if cell == WALL:
-                        color = COLOR_WALL
-                    elif cell == DATA:
-                        color = COLOR_DATA
-                    elif cell == FIREWALL:
-                        color = COLOR_FIREWALL
-                    elif cell == KEY:
-                        color = COLOR_KEY
-                    elif cell == EXIT:
-                        color = COLOR_EXIT
-                    elif cell == PREDATOR:
-                        color = COLOR_PREDATOR
-                    elif cell == BUILDER:
-                        color = COLOR_BUILDER
-                    elif cell == GRAVITY_ZONE:
-                        color = COLOR_GRAVITY
-                    elif cell == BOMB:
-                        color = COLOR_BOMB
-                    elif cell == TELEPORTER:
-                        color = COLOR_TELEPORTER
-                    elif cell == PILLAR:
-                        color = COLOR_PILLAR
-                    elif cell == SLUDGE:
-                        color = COLOR_SLUDGE
+                    # Try to get texture from grid
+                    texture = None
+                    if hasattr(self.grid, 'textures') and cell in self.grid.textures:
+                        surface = self.grid.textures[cell]
+                        if surface and hasattr(surface, 'texture'):
+                            texture = surface.texture
                     
-                    Color(*color)
-                    Rectangle(pos=(px, py), size=(TILE_SIZE, TILE_SIZE))
+                    if texture:
+                        Color(1, 1, 1, 1)
+                        # Handle rotation/flip if needed? (For now just basic render)
+                        Rectangle(texture=texture, pos=(px, py), size=(TILE_SIZE, TILE_SIZE))
+                    else:
+                        # Fallback to color
+                        color = COLOR_EMPTY
+                        if cell == WALL:
+                            color = COLOR_WALL
+                        elif cell == DATA:
+                            color = COLOR_DATA
+                        elif cell == FIREWALL:
+                            color = COLOR_FIREWALL
+                        elif cell == KEY:
+                            color = COLOR_KEY
+                        elif cell == EXIT:
+                            color = COLOR_EXIT
+                        elif cell == PREDATOR:
+                            color = COLOR_PREDATOR
+                        elif cell == BUILDER:
+                            color = COLOR_BUILDER
+                        elif cell == GRAVITY_ZONE:
+                            color = COLOR_GRAVITY
+                        elif cell == BOMB:
+                            color = COLOR_BOMB
+                        elif cell == TELEPORTER:
+                            color = COLOR_TELEPORTER
+                        elif cell == PILLAR:
+                            color = COLOR_PILLAR
+                        elif cell == SLUDGE:
+                            color = COLOR_SLUDGE
+                        
+                        Color(*color)
+                        Rectangle(pos=(px, py), size=(TILE_SIZE, TILE_SIZE))
             
             # Draw player
             px = self.player_x * TILE_SIZE
             py = (self.grid.height - self.player_y - 1) * TILE_SIZE
-            Color(*COLOR_HACKER)
-            Ellipse(pos=(px + TILE_SIZE//4, py + TILE_SIZE//4), 
-                   size=(TILE_SIZE//2, TILE_SIZE//2))
+            
+            # Player texture
+            player_texture = None
+            if hasattr(self.grid, 'textures') and PLAYER in self.grid.textures:
+                s = self.grid.textures[PLAYER]
+                if s and hasattr(s, 'texture'): player_texture = s.texture
+            
+            # Handle flipping
+            tex_coords = (0, 0, 1, 0, 1, 1, 0, 1) # Default
+            if self.facing_left:
+                tex_coords = (1, 0, 0, 0, 0, 1, 1, 1) # Flip horizontal
+
+            if player_texture:
+                Color(1, 1, 1, 1)
+                Rectangle(texture=player_texture, pos=(px, py), size=(TILE_SIZE, TILE_SIZE), tex_coords=tex_coords)
+            else:
+                Color(*COLOR_HACKER)
+                Ellipse(pos=(px + TILE_SIZE//4, py + TILE_SIZE//4), 
+                       size=(TILE_SIZE//2, TILE_SIZE//2))
             
             # Draw HUD
             hud_x = SCREEN_WIDTH - HUD_WIDTH
@@ -394,7 +444,7 @@ class GameWidget(Widget):
     
     def draw_virtual_controls(self):
         """Draw touch control overlays."""
-        alpha = 0.3
+        alpha = 0.5
         for name, (x, y_from_bottom, w, h) in self.touch_controls.items():
             y = SCREEN_HEIGHT - y_from_bottom - h
             Color(1, 1, 1, alpha)
