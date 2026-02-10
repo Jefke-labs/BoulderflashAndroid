@@ -10,15 +10,53 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build with Buildozer
-        uses: ArtemSBulgakov/buildozer-action@v1
-        env:
-          USER: root
-          PIP_BREAK_SYSTEM_PACKAGES: "1"
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
         with:
-          workdir: .
-          buildozer_version: stable
-          command: pip install --ignore-installed "wheel~=0.43.0" && buildozer android debug
+          python-version: '3.11'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            git \
+            python3-dev \
+            ffmpeg \
+            libsdl2-dev \
+            libsdl2-image-dev \
+            libsdl2-mixer-dev \
+            libsdl2-ttf-dev \
+            libportmidi-dev \
+            libswscale-dev \
+            libavformat-dev \
+            libavcodec-dev \
+            zlib1g-dev \
+            libgstreamer1.0-dev \
+            lld \
+            unzip \
+            zip \
+            autoconf \
+            automake \
+            libtool \
+            pkg-config \
+            cmake
+
+      - name: Install Buildozer and Cython
+        run: |
+          pip install --upgrade pip setuptools wheel
+          pip install buildozer cython
+
+      - name: Install Android SDK/NDK via Buildozer
+        run: |
+          yes | buildozer android debug 2>&1 || true
+        env:
+          APP_ANDROID_ACCEPT_SDK_LICENSE: "1"
+
+      - name: Build APK
+        run: buildozer android debug
+        env:
+          APP_ANDROID_ACCEPT_SDK_LICENSE: "1"
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
