@@ -51,7 +51,7 @@ import pygame
 from kivy.app import App
 from kivy.uix.widget import Widget
 from kivy.clock import Clock
-from kivy.graphics import Color, Rectangle, Ellipse, Line
+from kivy.graphics import Color, Rectangle, Ellipse, Line, PushMatrix, PopMatrix, Scale, Translate
 from kivy.core.window import Window
 from kivy.core.text import Label as CoreLabel
 
@@ -287,8 +287,32 @@ class GameWidget(Widget):
         """Render the game using Kivy Canvas."""
         self.canvas.clear()
         
+        # Calculate scaling
+        win_w, win_h = Window.size
+        scale_x = win_w / SCREEN_WIDTH
+        scale_y = win_h / SCREEN_HEIGHT
+        scale = min(scale_x, scale_y)
+        
+        # Center the game
+        offset_x = (win_w - SCREEN_WIDTH * scale) / 2
+        offset_y = (win_h - SCREEN_HEIGHT * scale) / 2
+        
+        # Store for input ref
+        self.game_scale = scale
+        self.game_offset_x = offset_x
+        self.game_offset_y = offset_y
+        
         with self.canvas:
-            # Background
+            # Clear background (fill whole screen with black borders)
+            Color(0, 0, 0, 1)
+            Rectangle(pos=(0, 0), size=(win_w, win_h))
+            
+            # Apply transformation for game content
+            PushMatrix()
+            Translate(offset_x, offset_y)
+            Scale(scale, scale, 1)
+            
+            # Background of game area
             Color(*COLOR_BG)
             Rectangle(pos=(0, 0), size=(SCREEN_WIDTH, SCREEN_HEIGHT))
             
@@ -352,11 +376,13 @@ class GameWidget(Widget):
                 Rectangle(pos=(0, 0), size=(SCREEN_WIDTH, SCREEN_HEIGHT))
                 Color(1, 1, 1, 1)
                 self.draw_text("BOULDERFLASH", SCREEN_WIDTH//2 - 100, SCREEN_HEIGHT - 100, size=32)
-                self.draw_text("Press SPACE to start", SCREEN_WIDTH//2 - 100, SCREEN_HEIGHT//2)
+                self.draw_text("Press SPACE / Tap to start", SCREEN_WIDTH//2 - 100, SCREEN_HEIGHT//2)
             
             # Draw virtual controls if mobile
             if self.is_mobile:
                 self.draw_virtual_controls()
+            
+            PopMatrix()
     
     def draw_text(self, text, x, y, size=18, color=(1, 1, 1, 1)):
         """Draw text using Kivy CoreLabel."""
@@ -377,6 +403,12 @@ class GameWidget(Widget):
     
     def on_touch_down(self, touch):
         """Handle touch input for virtual controls."""
+        # Transform touch to game coordinates
+        if not hasattr(self, 'game_scale'): return False
+        
+        game_x = (touch.x - self.game_offset_x) / self.game_scale
+        game_y = (touch.y - self.game_offset_y) / self.game_scale
+        
         if self.showing_legend:
             self.showing_legend = False
             return True
@@ -384,7 +416,7 @@ class GameWidget(Widget):
         # Check virtual control zones
         for name, (x, y_from_bottom, w, h) in self.touch_controls.items():
             y = SCREEN_HEIGHT - y_from_bottom - h
-            if x <= touch.x <= x + w and y <= touch.y <= y + h:
+            if x <= game_x <= x + w and y <= game_y <= y + h:
                 if name == "up":
                     self.move_player(0, -1)
                 elif name == "down":
