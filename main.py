@@ -308,19 +308,26 @@ class GameWidget(Widget):
         """Render the game using Kivy Canvas."""
         self.canvas.clear()
         
+    def render(self):
+        """Render the game using Kivy Canvas."""
+        self.canvas.clear()
+        
         # --- SPLIT SCREEN LAYOUT ---
-        # Top 85% for Game, Bottom 15% for Controls
+        # Top 8% for HUD
+        # Middle for Game (Fill available space)
+        # Bottom 22% for Controls
         win_w, win_h = Window.size
         
-        controls_h = win_h * 0.15
-        game_area_h = win_h - controls_h
+        hud_h = win_h * 0.08
+        controls_h = win_h * 0.22
+        game_area_h = win_h - hud_h - controls_h
         
         # Calculate scaling to fit game in game_area_h
         scale_x = win_w / SCREEN_WIDTH
         scale_y = game_area_h / SCREEN_HEIGHT
         scale = min(scale_x, scale_y)
         
-        # Center game in the top area
+        # Center game in the middle area
         offset_x = (win_w - SCREEN_WIDTH * scale) / 2
         offset_y = controls_h + (game_area_h - SCREEN_HEIGHT * scale) / 2
         
@@ -334,11 +341,15 @@ class GameWidget(Widget):
             Color(0, 0, 0, 1)
             Rectangle(pos=(0, 0), size=(win_w, win_h))
             
-            # 2. Draw Controls Area (Bottom)
-            Color(0.1, 0.1, 0.1, 1)
+            # 2. Draw Controls Area (Bottom Background)
+            Color(0.05, 0.05, 0.05, 1)
             Rectangle(pos=(0, 0), size=(win_w, controls_h))
             
-            # 3. Game Content (Transform Context)
+            # 3. Draw HUD Area (Top Background)
+            Color(0.1, 0.1, 0.1, 1)
+            Rectangle(pos=(0, win_h - hud_h), size=(win_w, hud_h))
+            
+            # 4. Game Content (Transform Context)
             PushMatrix()
             # Apply transform
             Translate(offset_x, offset_y)
@@ -359,8 +370,18 @@ class GameWidget(Widget):
                     
                     texture = None
                     
+                    # Special Case: EXIT
+                    if cell == EXIT:
+                        anim_key = "exit_green" if self.keys_collected >= self.required_keys else "exit_red"
+                        if hasattr(self.grid, 'animated_textures') and anim_key in self.grid.animated_textures:
+                            frames = self.grid.animated_textures[anim_key]
+                            if frames:
+                                frame_idx = (current_time // 100) % len(frames)
+                                s = frames[frame_idx]
+                                if s and hasattr(s, 'texture'): texture = s.texture
+                    
                     # A. Try Animated Textures (Priority)
-                    if hasattr(self.grid, 'animated_textures') and cell in self.grid.animated_textures:
+                    elif hasattr(self.grid, 'animated_textures') and cell in self.grid.animated_textures:
                         frames = self.grid.animated_textures[cell]
                         if frames:
                             # Determine animation speed
@@ -384,7 +405,7 @@ class GameWidget(Widget):
                         Color(1, 1, 1, 1)
                         Rectangle(texture=texture, pos=(px, py), size=(TILE_SIZE, TILE_SIZE))
                     else:
-                        # Color Fallback
+                        # Color Fallback (same as before)
                         color = COLOR_EMPTY
                         if cell == WALL: color = COLOR_WALL
                         elif cell == DATA: color = COLOR_DATA
@@ -420,15 +441,6 @@ class GameWidget(Widget):
                 Color(*COLOR_HACKER)
                 Ellipse(pos=(px + TILE_SIZE//4, py + TILE_SIZE//4), size=(TILE_SIZE//2, TILE_SIZE//2))
             
-            # Draw HUD (In-game right panel)
-            hud_x = SCREEN_WIDTH - HUD_WIDTH
-            Color(0.1, 0.1, 0.1, 0.8)
-            Rectangle(pos=(hud_x, 0), size=(HUD_WIDTH, SCREEN_HEIGHT))
-            
-            self.draw_text(f"Lives: {self.lives}", hud_x + 10, SCREEN_HEIGHT - 30)
-            self.draw_text(f"Keys: {self.keys_collected}/{self.required_keys}", hud_x + 10, SCREEN_HEIGHT - 60)
-            self.draw_text(f"Bombs: {self.bombs_count}", hud_x + 10, SCREEN_HEIGHT - 90)
-            
             # Legend Overlay
             if self.showing_legend:
                 Color(0, 0, 0, 0.8)
@@ -439,9 +451,18 @@ class GameWidget(Widget):
             
             PopMatrix()
             
-            # 4. Draw Virtual Controls (In Bottom Area - logic needs update)
+            # 5. Draw HUD Text (Top Area)
+            cy = win_h - hud_h/2 - 10 # Centered vertically in top bar
+            # Split into 3 columns
+            col_w = win_w / 3
+            self.draw_text(f"Lives: {self.lives}", 20, cy, size=20)
+            self.draw_text(f"Keys: {self.keys_collected}/{self.required_keys}", col_w + 20, cy, size=20)
+            self.draw_text(f"Bombs: {self.bombs_count}", col_w*2 + 20, cy, size=20)
+
+            # 6. Draw Virtual Controls (Bottom Area)
             if self.is_mobile:
                 self.draw_virtual_controls_fixed(win_w, controls_h)
+
 
     def get_player_texture(self):
         """Helper to lazy-load and return player texture."""
@@ -466,56 +487,58 @@ class GameWidget(Widget):
 
     def draw_virtual_controls_fixed(self, win_w, area_h):
         """Draw controls in the reserved bottom area."""
-        # Simple specific layout for this area
-        # D-Pad on Left, Actions on Right
+        # Bigger / Better Layout
         
-        # Area: 0 to area_h (y)
-        
-        pad_size = min(area_h * 0.8, win_w * 0.25)
+        # Maximize usage of area_h (22% of screen)
+        # Pad size = almost full height of area
+        pad_size = min(area_h * 0.9, win_w * 0.4) 
         btn_size = pad_size / 3
         
-        # Center of D-Pad (Left side)
-        cx = win_w * 0.15
+        # Center of D-Pad (Left aligned)
+        cx = win_w * 0.15 # 15% from left
         cy = area_h / 2
         
         # Store rects for input handling (GLOBAL coordinates)
         self.control_zones = {}
         
-        Color(1, 1, 1, 0.5)
+        Color(1, 1, 1, 0.6) # Slightly more visible
         
+        # D-Pad
         # Left
         r = (cx - btn_size*1.5, cy - btn_size/2, btn_size, btn_size)
-        Line(rectangle=r, width=2)
+        Line(rectangle=r, width=3)
         self.control_zones['left'] = r
         
         # Right
         r = (cx + btn_size*0.5, cy - btn_size/2, btn_size, btn_size)
-        Line(rectangle=r, width=2)
+        Line(rectangle=r, width=3)
         self.control_zones['right'] = r
         
         # Up
         r = (cx - btn_size/2, cy + btn_size*0.5, btn_size, btn_size)
-        Line(rectangle=r, width=2)
+        Line(rectangle=r, width=3)
         self.control_zones['up'] = r
         
         # Down
         r = (cx - btn_size/2, cy - btn_size*1.5, btn_size, btn_size)
-        Line(rectangle=r, width=2)
+        Line(rectangle=r, width=3)
         self.control_zones['down'] = r
         
-        # Actions (Right side)
-        cx = win_w * 0.85
+        # Actions (Right aligned)
+        # Just 2 big buttons
+        action_btn_size = btn_size * 1.5 
+        start_x_actions = win_w * 0.75
         
         # Bomb (B)
-        r = (cx - btn_size*1.5, cy - btn_size/2, btn_size, btn_size)
-        Line(rectangle=r, width=2)
-        self.draw_text("B", r[0]+5, r[1]+5, size=14)
+        r = (start_x_actions, cy - action_btn_size/2, action_btn_size, action_btn_size)
+        Line(rectangle=r, width=3)
+        self.draw_text("B", r[0]+15, r[1]+15, size=24)
         self.control_zones['bomb'] = r
         
         # Pillar (P)
-        r = (cx + btn_size*0.5, cy - btn_size/2, btn_size, btn_size)
-        Line(rectangle=r, width=2)
-        self.draw_text("P", r[0]+5, r[1]+5, size=14)
+        r = (start_x_actions + action_btn_size + 20, cy - action_btn_size/2, action_btn_size, action_btn_size)
+        Line(rectangle=r, width=3)
+        self.draw_text("P", r[0]+15, r[1]+15, size=24)
         self.control_zones['pillar'] = r
 
     
