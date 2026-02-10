@@ -308,15 +308,21 @@ class GameWidget(Widget):
         """Render the game using Kivy Canvas."""
         self.canvas.clear()
         
-        # Calculate scaling
+        # --- SPLIT SCREEN LAYOUT ---
+        # Top 85% for Game, Bottom 15% for Controls
         win_w, win_h = Window.size
+        
+        controls_h = win_h * 0.15
+        game_area_h = win_h - controls_h
+        
+        # Calculate scaling to fit game in game_area_h
         scale_x = win_w / SCREEN_WIDTH
-        scale_y = win_h / SCREEN_HEIGHT
+        scale_y = game_area_h / SCREEN_HEIGHT
         scale = min(scale_x, scale_y)
         
-        # Center the game
+        # Center game in the top area
         offset_x = (win_w - SCREEN_WIDTH * scale) / 2
-        offset_y = (win_h - SCREEN_HEIGHT * scale) / 2
+        offset_y = controls_h + (game_area_h - SCREEN_HEIGHT * scale) / 2
         
         # Store for input ref
         self.game_scale = scale
@@ -324,115 +330,194 @@ class GameWidget(Widget):
         self.game_offset_y = offset_y
         
         with self.canvas:
-            # Clear background (fill whole screen with black borders)
+            # 1. Clear Screen (Black)
             Color(0, 0, 0, 1)
             Rectangle(pos=(0, 0), size=(win_w, win_h))
             
-            # Apply transformation for game content
+            # 2. Draw Controls Area (Bottom)
+            Color(0.1, 0.1, 0.1, 1)
+            Rectangle(pos=(0, 0), size=(win_w, controls_h))
+            
+            # 3. Game Content (Transform Context)
             PushMatrix()
+            # Apply transform
             Translate(offset_x, offset_y)
             Scale(scale, scale, 1)
             
-            # Background of game area
+            # Game Background
             Color(*COLOR_BG)
             Rectangle(pos=(0, 0), size=(SCREEN_WIDTH, SCREEN_HEIGHT))
             
-            # Draw grid
+            # Draw Grid
+            current_time = PygameShim.time.get_ticks()
+            
             for y in range(self.grid.height):
                 for x in range(self.grid.width):
                     cell = self.grid.get_tile(x, y)
                     px = x * TILE_SIZE
                     py = (self.grid.height - y - 1) * TILE_SIZE  # Flip Y
                     
-                    # Try to get texture from grid
                     texture = None
-                    if hasattr(self.grid, 'textures') and cell in self.grid.textures:
+                    
+                    # A. Try Animated Textures (Priority)
+                    if hasattr(self.grid, 'animated_textures') and cell in self.grid.animated_textures:
+                        frames = self.grid.animated_textures[cell]
+                        if frames:
+                            # Determine animation speed
+                            speed = 100
+                            if cell in [PREDATOR, SLUDGE]: speed = 70
+                            elif cell == BOMB: speed = 80
+                            
+                            frame_idx = (current_time // speed) % len(frames)
+                            surface = frames[frame_idx]
+                            if surface and hasattr(surface, 'texture'):
+                                texture = surface.texture
+
+                    # B. Try Static Textures (Fallback)
+                    if not texture and hasattr(self.grid, 'textures') and cell in self.grid.textures:
                         surface = self.grid.textures[cell]
                         if surface and hasattr(surface, 'texture'):
                             texture = surface.texture
                     
+                    # Render Tile
                     if texture:
                         Color(1, 1, 1, 1)
-                        # Handle rotation/flip if needed? (For now just basic render)
                         Rectangle(texture=texture, pos=(px, py), size=(TILE_SIZE, TILE_SIZE))
                     else:
-                        # Fallback to color
+                        # Color Fallback
                         color = COLOR_EMPTY
-                        if cell == WALL:
-                            color = COLOR_WALL
-                        elif cell == DATA:
-                            color = COLOR_DATA
-                        elif cell == FIREWALL:
-                            color = COLOR_FIREWALL
-                        elif cell == KEY:
-                            color = COLOR_KEY
-                        elif cell == EXIT:
-                            color = COLOR_EXIT
-                        elif cell == PREDATOR:
-                            color = COLOR_PREDATOR
-                        elif cell == BUILDER:
-                            color = COLOR_BUILDER
-                        elif cell == GRAVITY_ZONE:
-                            color = COLOR_GRAVITY
-                        elif cell == BOMB:
-                            color = COLOR_BOMB
-                        elif cell == TELEPORTER:
-                            color = COLOR_TELEPORTER
-                        elif cell == PILLAR:
-                            color = COLOR_PILLAR
-                        elif cell == SLUDGE:
-                            color = COLOR_SLUDGE
+                        if cell == WALL: color = COLOR_WALL
+                        elif cell == DATA: color = COLOR_DATA
+                        elif cell == FIREWALL: color = COLOR_FIREWALL
+                        elif cell == KEY: color = COLOR_KEY
+                        elif cell == EXIT: color = COLOR_EXIT
+                        elif cell == PREDATOR: color = COLOR_PREDATOR
+                        elif cell == BUILDER: color = COLOR_BUILDER
+                        elif cell == GRAVITY_ZONE: color = COLOR_GRAVITY
+                        elif cell == BOMB: color = COLOR_BOMB
+                        elif cell == TELEPORTER: color = COLOR_TELEPORTER
+                        elif cell == PILLAR: color = COLOR_PILLAR
+                        elif cell == SLUDGE: color = COLOR_SLUDGE
                         
                         Color(*color)
                         Rectangle(pos=(px, py), size=(TILE_SIZE, TILE_SIZE))
             
-            # Draw player
+            # Draw Player
             px = self.player_x * TILE_SIZE
             py = (self.grid.height - self.player_y - 1) * TILE_SIZE
             
-            # Player texture
-            player_texture = None
-            if hasattr(self.grid, 'textures') and PLAYER in self.grid.textures:
-                s = self.grid.textures[PLAYER]
-                if s and hasattr(s, 'texture'): player_texture = s.texture
+            # Player Texture Logic
+            player_texture = self.get_player_texture()
             
-            # Handle flipping
-            tex_coords = (0, 0, 1, 0, 1, 1, 0, 1) # Default
-            if self.facing_left:
-                tex_coords = (1, 0, 0, 0, 0, 1, 1, 1) # Flip horizontal
-
             if player_texture:
                 Color(1, 1, 1, 1)
+                # Handle flipping
+                tex_coords = (0, 0, 1, 0, 1, 1, 0, 1)
+                if self.facing_left:
+                    tex_coords = (1, 0, 0, 0, 0, 1, 1, 1)
                 Rectangle(texture=player_texture, pos=(px, py), size=(TILE_SIZE, TILE_SIZE), tex_coords=tex_coords)
             else:
                 Color(*COLOR_HACKER)
-                Ellipse(pos=(px + TILE_SIZE//4, py + TILE_SIZE//4), 
-                       size=(TILE_SIZE//2, TILE_SIZE//2))
+                Ellipse(pos=(px + TILE_SIZE//4, py + TILE_SIZE//4), size=(TILE_SIZE//2, TILE_SIZE//2))
             
-            # Draw HUD
+            # Draw HUD (In-game right panel)
             hud_x = SCREEN_WIDTH - HUD_WIDTH
-            Color(0.1, 0.1, 0.1, 1)
+            Color(0.1, 0.1, 0.1, 0.8)
             Rectangle(pos=(hud_x, 0), size=(HUD_WIDTH, SCREEN_HEIGHT))
             
-            # Draw text (simplified for now)
             self.draw_text(f"Lives: {self.lives}", hud_x + 10, SCREEN_HEIGHT - 30)
-            self.draw_text(f"Keys: {self.keys_collected}/{self.required_keys}", 
-                          hud_x + 10, SCREEN_HEIGHT - 60)
+            self.draw_text(f"Keys: {self.keys_collected}/{self.required_keys}", hud_x + 10, SCREEN_HEIGHT - 60)
             self.draw_text(f"Bombs: {self.bombs_count}", hud_x + 10, SCREEN_HEIGHT - 90)
             
-            # Draw legend overlay if showing
+            # Legend Overlay
             if self.showing_legend:
                 Color(0, 0, 0, 0.8)
                 Rectangle(pos=(0, 0), size=(SCREEN_WIDTH, SCREEN_HEIGHT))
                 Color(1, 1, 1, 1)
                 self.draw_text("BOULDERFLASH", SCREEN_WIDTH//2 - 100, SCREEN_HEIGHT - 100, size=32)
-                self.draw_text("Press SPACE / Tap to start", SCREEN_WIDTH//2 - 100, SCREEN_HEIGHT//2)
-            
-            # Draw virtual controls if mobile
-            if self.is_mobile:
-                self.draw_virtual_controls()
+                self.draw_text("Tap SCREEN to Start", SCREEN_WIDTH//2 - 100, SCREEN_HEIGHT//2)
             
             PopMatrix()
+            
+            # 4. Draw Virtual Controls (In Bottom Area - logic needs update)
+            if self.is_mobile:
+                self.draw_virtual_controls_fixed(win_w, controls_h)
+
+    def get_player_texture(self):
+        """Helper to lazy-load and return player texture."""
+        if hasattr(self, '_player_tex'): return self._player_tex
+        
+        # Try finding a texture
+        try:
+            from kivy.core.image import Image as CoreImage
+            # Try a few common paths
+            paths = ["assets/player_idle_0.png", "assets/player_idle.png", "assets/player.png"]
+            for p in paths:
+                # Need resource_path
+                full_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), p)
+                if os.path.exists(full_path):
+                    self._player_tex = CoreImage(full_path).texture
+                    return self._player_tex
+        except:
+            pass
+        
+        self._player_tex = None
+        return None
+
+    def draw_virtual_controls_fixed(self, win_w, area_h):
+        """Draw controls in the reserved bottom area."""
+        # Simple specific layout for this area
+        # D-Pad on Left, Actions on Right
+        
+        # Area: 0 to area_h (y)
+        
+        pad_size = min(area_h * 0.8, win_w * 0.25)
+        btn_size = pad_size / 3
+        
+        # Center of D-Pad (Left side)
+        cx = win_w * 0.15
+        cy = area_h / 2
+        
+        # Store rects for input handling (GLOBAL coordinates)
+        self.control_zones = {}
+        
+        Color(1, 1, 1, 0.5)
+        
+        # Left
+        r = (cx - btn_size*1.5, cy - btn_size/2, btn_size, btn_size)
+        Line(rectangle=r, width=2)
+        self.control_zones['left'] = r
+        
+        # Right
+        r = (cx + btn_size*0.5, cy - btn_size/2, btn_size, btn_size)
+        Line(rectangle=r, width=2)
+        self.control_zones['right'] = r
+        
+        # Up
+        r = (cx - btn_size/2, cy + btn_size*0.5, btn_size, btn_size)
+        Line(rectangle=r, width=2)
+        self.control_zones['up'] = r
+        
+        # Down
+        r = (cx - btn_size/2, cy - btn_size*1.5, btn_size, btn_size)
+        Line(rectangle=r, width=2)
+        self.control_zones['down'] = r
+        
+        # Actions (Right side)
+        cx = win_w * 0.85
+        
+        # Bomb (B)
+        r = (cx - btn_size*1.5, cy - btn_size/2, btn_size, btn_size)
+        Line(rectangle=r, width=2)
+        self.draw_text("B", r[0]+5, r[1]+5, size=14)
+        self.control_zones['bomb'] = r
+        
+        # Pillar (P)
+        r = (cx + btn_size*0.5, cy - btn_size/2, btn_size, btn_size)
+        Line(rectangle=r, width=2)
+        self.draw_text("P", r[0]+5, r[1]+5, size=14)
+        self.control_zones['pillar'] = r
+
     
     def draw_text(self, text, x, y, size=18, color=(1, 1, 1, 1)):
         """Draw text using Kivy CoreLabel."""
@@ -452,40 +537,34 @@ class GameWidget(Widget):
             self.draw_text(name[0].upper(), x + w//3, y + h//3, size=14)
     
     def on_touch_down(self, touch):
-        """Handle touch input for virtual controls."""
-        # Transform touch to game coordinates
-        if not hasattr(self, 'game_scale'): return False
-        
-        game_x = (touch.x - self.game_offset_x) / self.game_scale
-        game_y = (touch.y - self.game_offset_y) / self.game_scale
-        
+        """Handle touch input."""
         if self.showing_legend:
             self.showing_legend = False
             return True
         
-        # Check virtual control zones
-        for name, (x, y_from_bottom, w, h) in self.touch_controls.items():
-            y = SCREEN_HEIGHT - y_from_bottom - h
-            if x <= game_x <= x + w and y <= game_y <= y + h:
-                if name == "up":
-                    self.move_player(0, -1)
-                elif name == "down":
-                    self.move_player(0, 1)
-                elif name == "left":
-                    self.move_player(-1, 0)
-                    self.facing_left = True
-                elif name == "right":
-                    self.move_player(1, 0)
-                    self.facing_left = False
-                elif name == "bomb" and self.bombs_count > 0:
-                    self.bombs_count -= 1
-                    self.engine.active_bombs.append((self.player_x, self.player_y, 10))
-                    self.grid.set_tile(self.player_x, self.player_y, BOMB)
-                elif name == "pillar" and self.pillars_count > 0:
-                    self.pillars_count -= 1
-                    self.grid.set_tile(self.player_x, self.player_y, PILLAR)
-                return True
-        
+        # Check global control zones first (no transform needed)
+        if hasattr(self, 'control_zones'):
+            tx, ty = touch.x, touch.y
+            for name, rect in self.control_zones.items():
+                rx, ry, rw, rh = rect
+                if rx <= tx <= rx + rw and ry <= ty <= ry + rh:
+                    if name == "up": self.move_player(0, -1)
+                    elif name == "down": self.move_player(0, 1)
+                    elif name == "left":
+                        self.move_player(-1, 0)
+                        self.facing_left = True
+                    elif name == "right":
+                        self.move_player(1, 0)
+                        self.facing_left = False
+                    elif name == "bomb" and self.bombs_count > 0:
+                        self.bombs_count -= 1
+                        self.engine.active_bombs.append((self.player_x, self.player_y, 10))
+                        self.grid.set_tile(self.player_x, self.player_y, BOMB)
+                    elif name == "pillar" and self.pillars_count > 0:
+                        self.pillars_count -= 1
+                        self.grid.set_tile(self.player_x, self.player_y, PILLAR)
+                    return True
+
         return super().on_touch_down(touch)
 
     def on_key_down(self, window, key, scancode, codepoint, modifiers):
