@@ -54,8 +54,8 @@ android.archs = arm64-v8a
 android.allow_backup = True
 
 # (str) python-for-android branch to use
-# 'develop' has the latest recipes including pygame-ce
-p4a.branch = develop
+# 'master' is stable and well-tested with pygame-ce
+p4a.branch = master
 
 # (str) Bootstrap to use for the build
 p4a.bootstrap = sdl2
