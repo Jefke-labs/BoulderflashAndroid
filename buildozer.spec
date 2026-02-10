@@ -25,8 +25,8 @@ source.exclude_dirs = .git,.github,.buildozer,bin,__pycache__
 version = 1.0.0
 
 # (list) Application requirements
-# SDL2 bootstrap provides pygame automatically - do NOT add pygame/pygame-ce here
-requirements = python3,android
+# SDL2 modules trigger pygame to be built from SDL2 sources for Android ARM64
+requirements = python3,sdl2,sdl2_image,sdl2_mixer,sdl2_ttf,android
 
 # (list) Supported orientations
 orientation = landscape
