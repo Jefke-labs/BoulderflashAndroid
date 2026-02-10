@@ -25,8 +25,8 @@ source.exclude_dirs = .git,.github,.buildozer,bin,__pycache__
 version = 1.0.0
 
 # (list) Application requirements
-# pygame-ce is the community edition fork compatible with Android ARM
-requirements = python3,pygame-ce,sdl2,sdl2_image,sdl2_mixer,sdl2_ttf,android
+# Use pygame recipe (not pygame-ce pip package) to build from SDL2 for Android
+requirements = python3,pygame,sdl2,sdl2_image,sdl2_mixer,sdl2_ttf,android
 
 # (list) Supported orientations
 orientation = landscape
