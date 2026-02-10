@@ -24,9 +24,9 @@ source.exclude_dirs = .git,.github,.buildozer,bin,__pycache__
 # (str) Application versioning
 version = 1.0.0
 
-# (list) Application requirements
-# pygame_sdl2 is pygame reimplemented for SDL2, specifically designed for Android
-requirements = python3,pygame_sdl2,android
+# (list) Application requirements  
+# Using Kivy framework for native Android support
+requirements = python3,kivy
 
 # (list) Supported orientations
 orientation = landscape
