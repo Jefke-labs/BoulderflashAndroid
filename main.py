@@ -118,17 +118,62 @@ class GameWidget(Widget):
     
     def load_level(self, index):
         """Load a level from the levels list."""
-        if 0 <= index < len(LEVELS):
-            level = LEVELS[index]
-            self.grid = Grid.from_list(level['cells'])
-            self.engine = Engine(self.grid)
-            self.player_x, self.player_y = level['start']
-            self.required_keys = level['required_keys']
-            self.keys_collected = 0
-            self.bombs_count = level.get('bombs_count', 0)
-            self.pillars_count = level.get('pillars_count', 0)
-            self.game_over = False
-            self.won = False
+        if index >= len(LEVELS):
+            return
+
+        map_str = LEVELS[index].strip()
+        lines = map_str.split('\n')
+        height = len(lines)
+        width = len(lines[0]) if lines else 0
+        
+        # Create grid and parse
+        from constants import EMPTY, DATA, WALL, FIREWALL, KEY, EXIT, PREDATOR, BUILDER, GRAVITY_ZONE, TELEPORTER, SLUDGE
+        
+        # Create 2D grid
+        cells = []
+        player_pos = (1, 1)
+        keys_count = 0
+        
+        for y, line in enumerate(lines):
+            row = []
+            for x, char in enumerate(line):
+                if char == '#': row.append(WALL)
+                elif char == '*': row.append(DATA)
+                elif char == 'F': row.append(FIREWALL)
+                elif char == 'K': 
+                    row.append(KEY)
+                    keys_count += 1
+                elif char == 'P':
+                    player_pos = (x, y)
+                    row.append(EMPTY)
+                elif char == 'A': row.append(PREDATOR)
+                elif char == 'B': row.append(BUILDER)
+                elif char == 'G':
+                    row.append(GRAVITY_ZONE)
+                elif char == 'X': row.append(EXIT)
+                elif char == 'T': row.append(TELEPORTER)
+                elif char == 'S': row.append(SLUDGE)
+                elif char == '.': row.append(EMPTY)
+                else: row.append(EMPTY)
+            cells.append(row)
+        
+        # Create grid from cells
+        self.grid = Grid.from_list(cells)
+        self.engine = Engine(self.grid)
+        self.player_x, self.player_y = player_pos
+        self.required_keys = max(1, keys_count)
+        self.keys_collected = 0
+        self.bombs_count = 5
+        self.pillars_count = 3
+        self.game_over = False
+        self.won = False
+        
+        # Register gravity zones in engine
+        self.engine.gravity_zones.clear()
+        for y in range(height):
+            for x in range(len(cells[y]) if y < len(cells) else 0):
+                if cells[y][x] == GRAVITY_ZONE:
+                    self.engine.gravity_zones.add((x, y))
     
     def handle_death(self):
         """Trigger death animation and state."""
