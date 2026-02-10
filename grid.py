@@ -15,7 +15,7 @@ import os
 from utils import resource_path
 
 class Grid:
-    def __init__(self, width, height):
+    def __init__(self, width, height, load_graphics=True):
         self.width = width
         self.height = height
         self.tiles = [[DATA for _ in range(width)] for _ in range(height)]
@@ -25,7 +25,9 @@ class Grid:
         self.animated_textures = {}
         self.explosion_frames = []
         self.active_explosions = []
-        self.load_textures()
+        
+        if load_graphics:
+            self.load_textures()
         
         # Add a border of walls
         for x in range(width):
@@ -43,17 +45,13 @@ class Grid:
         
         height = len(cells)
         width = len(cells[0])
-        grid = Grid.__new__(Grid)  # Create instance without calling __init__
-        grid.width = width
-        grid.height = height
-        grid.tiles = [row[:] for row in cells]  # Deep copy
         
-        # Initialize other attributes
-        grid.textures = {}
-        grid.animated_textures = {}
-        grid.explosion_frames = []
-        grid.active_explosions = []
-        grid.load_textures()
+        # Use standard instantiation instead of __new__ hack
+        # Auto-load graphics
+        grid = Grid(width, height, load_graphics=True)
+        
+        # Override tiles with provided data
+        grid.tiles = [row[:] for row in cells]  # Deep copy
         
         return grid
 
