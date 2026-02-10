@@ -34,6 +34,28 @@ class Grid:
         for y in range(height):
             self.tiles[y][0] = WALL
             self.tiles[y][width-1] = WALL
+    
+    @staticmethod
+    def from_list(cells):
+        """Create a Grid from a 2D list of cell values."""
+        if not cells or not cells[0]:
+            raise ValueError("Empty cells list")
+        
+        height = len(cells)
+        width = len(cells[0])
+        grid = Grid.__new__(Grid)  # Create instance without calling __init__
+        grid.width = width
+        grid.height = height
+        grid.tiles = [row[:] for row in cells]  # Deep copy
+        
+        # Initialize other attributes
+        grid.textures = {}
+        grid.animated_textures = {}
+        grid.explosion_frames = []
+        grid.active_explosions = []
+        grid.load_textures()
+        
+        return grid
 
     def load_textures(self):
         asset_map = {
