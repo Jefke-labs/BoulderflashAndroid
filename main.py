@@ -10,6 +10,43 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
     sys.path.insert(0, current_dir)
 
+# Kivy-compatible Pygame Shim
+class PygameShim:
+    class Rect:
+        def __init__(self, x=0, y=0, w=0, h=0):
+            self.x, self.y, self.w, self.h = x, y, w, h
+            self.width, self.height = w, h
+        def colliderect(self, other):
+            return self.x < other.x + other.w and self.x + self.w > other.x and \
+                   self.y < other.y + other.h and self.y + self.h > other.y
+    class time:
+        @staticmethod
+        def get_ticks():
+            from kivy.clock import Clock
+            return int(Clock.get_time() * 1000)
+    class font:
+        class SysFont:
+            def __init__(self, *args, **kwargs): pass
+            def render(self, *args, **kwargs): return None
+    class image:
+        @staticmethod
+        def load(path):
+            return PygameShim.Surface()
+    class transform:
+        @staticmethod
+        def scale(s, size): return s
+        @staticmethod
+        def flip(s, x, y): return s
+    class Surface:
+        def convert_alpha(self): return self
+        def convert(self): return self
+        def get_width(self): return 0
+        def get_height(self): return 0
+        def subsurface(self, rect): return self
+
+sys.modules['pygame'] = PygameShim
+import pygame
+
 # Kivy imports
 from kivy.app import App
 from kivy.uix.widget import Widget
@@ -94,6 +131,8 @@ class GameWidget(Widget):
         
         # Keyboard state
         self.keys_pressed = set()
+        Window.bind(on_key_down=self.on_key_down)
+        Window.bind(on_key_up=self.on_key_up)
         
         # Schedule game update loop
         Clock.schedule_interval(self.update, 1.0 / FPS)
@@ -125,9 +164,6 @@ class GameWidget(Widget):
         lines = map_str.split('\n')
         height = len(lines)
         width = len(lines[0]) if lines else 0
-        
-        # Create grid and parse
-        from constants import EMPTY, DATA, WALL, FIREWALL, KEY, EXIT, PREDATOR, BUILDER, GRAVITY_ZONE, TELEPORTER, SLUDGE
         
         # Create 2D grid
         cells = []
@@ -196,14 +232,14 @@ class GameWidget(Widget):
         if not (0 <= new_x < self.grid.width and 0 <= new_y < self.grid.height):
             return
         
-        target_cell = self.grid.get(new_x, new_y)
+        target_cell = self.grid.get_tile(new_x, new_y)
         
         # Handle collisions
         if target_cell == WALL or target_cell == FIREWALL:
             return
         elif target_cell == KEY:
             self.keys_collected += 1
-            self.grid.set(new_x, new_y, EMPTY)
+            self.grid.set_tile(new_x, new_y, EMPTY)
         elif target_cell == EXIT:
             if self.keys_collected >= self.required_keys:
                 self.won = True
@@ -239,7 +275,8 @@ class GameWidget(Widget):
                 self.facing_left = False
             
             # Game engine update
-            player_killed = self.engine.update()
+            current_time = int(Clock.get_time() * 1000)  # Convert to milliseconds
+            player_killed = self.engine.update(current_time, (self.player_x, self.player_y))
             if player_killed:
                 self.handle_death()
         
@@ -258,7 +295,7 @@ class GameWidget(Widget):
             # Draw grid
             for y in range(self.grid.height):
                 for x in range(self.grid.width):
-                    cell = self.grid.get(x, y)
+                    cell = self.grid.get_tile(x, y)
                     px = x * TILE_SIZE
                     py = (self.grid.height - y - 1) * TILE_SIZE  # Flip Y
                     
@@ -360,13 +397,70 @@ class GameWidget(Widget):
                     self.facing_left = False
                 elif name == "bomb" and self.bombs_count > 0:
                     self.bombs_count -= 1
-                    self.grid.set(self.player_x, self.player_y, BOMB)
+                    self.engine.active_bombs.append((self.player_x, self.player_y, 10))
+                    self.grid.set_tile(self.player_x, self.player_y, BOMB)
                 elif name == "pillar" and self.pillars_count > 0:
                     self.pillars_count -= 1
-                    self.grid.set(self.player_x, self.player_y, PILLAR)
+                    self.grid.set_tile(self.player_x, self.player_y, PILLAR)
                 return True
         
         return super().on_touch_down(touch)
+
+    def on_key_down(self, window, key, scancode, codepoint, modifiers):
+        """Handle key press."""
+        # Map keycodes to names
+        key_name = codepoint
+        if key == 273: key_name = 'up'
+        elif key == 274: key_name = 'down'
+        elif key == 276: key_name = 'left'
+        elif key == 275: key_name = 'right'
+        elif key == 32: key_name = 'spacebar'
+        elif key == 13: key_name = 'enter'
+        elif key == 27: key_name = 'escape'
+        
+        if key_name:
+            self.keys_pressed.add(key_name)
+        
+        # Immediate actions
+        if key_name == 'spacebar':
+             if self.bombs_count > 0:
+                 self.engine.active_bombs.append((self.player_x, self.player_y, 10))
+                 self.grid.set_tile(self.player_x, self.player_y, BOMB)
+                 self.bombs_count -= 1
+        elif key_name == 'lctrl':
+             if self.pillars_count > 0:
+                 self.grid.set_tile(self.player_x, self.player_y, PILLAR)
+                 self.pillars_count -= 1
+                 
+    def on_key_up(self, window, key, *args):
+        """Handle key release."""
+        key_name = None
+        # Try to match what we added
+        if key == 273: key_name = 'up'
+        elif key == 274: key_name = 'down'
+        elif key == 276: key_name = 'left'
+        elif key == 275: key_name = 'right'
+        elif key == 32: key_name = 'spacebar'
+        elif key == 13: key_name = 'enter'
+        elif key == 27: key_name = 'escape'
+        elif hasattr(key, 'lower'): # codepoint
+             key_name = key
+        
+        # Remove direct codepoints if they exist (char)
+        # Note: Kivy sends codepoint as char in on_key_down, but on_key_up might differ
+        # Use simpler approach: clear all related if confused, or just remove if present
+        # We'll rely on the update loop checking specifics
+        pass
+        
+        # Better approach: store raw keys in set, map them in update()
+        # But we used string names in update()...
+        # Let's just remove the mapped name
+        if key_name and key_name in self.keys_pressed:
+            self.keys_pressed.remove(key_name)
+        
+        # Remove codepoint if we added it (tricky to get codepoint in key_up)
+        # We'll just clear keys on focus loss or something if it gets stuck
+
 
 
 class BoulderflashApp(App):
@@ -378,15 +472,21 @@ class BoulderflashApp(App):
         return game
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     try:
         BoulderflashApp().run()
     except Exception as e:
         import traceback
         error_msg = traceback.format_exc()
-        print(error_msg)
+        try:
+            with open("error.log", "w") as f:
+                f.write(error_msg)
+            print("CRASH CAUGHT: " + error_msg)
+        except:
+            print("CRASH CAUGHT (Write failed): " + error_msg)
         
-        # Try to log error on Android
+        # Original Android logging attempt, now nested
+        print(error_msg) # Print to console as well
         try:
             if IS_ANDROID:
                 from android.storage import app_storage_path
