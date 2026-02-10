@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+.Python
+env/
+venv/
+build/
+dist/
+
+# Buildozer
+.buildozer/
+bin/
+*.apk
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Project specific
+crash_log.txt
+highscores.json
+*.spec.backup
+.gemini/
+.antigravity/
